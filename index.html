@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Suivi médicament</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: linear-gradient(180deg, #F6EFE4 0%, #EFE4D2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    font-family: 'Avenir Next', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  .card {
+    width: 100%;
+    max-width: 380px;
+    background: #FFFDF9;
+    border-radius: 28px;
+    padding: 28px 24px 24px;
+    box-shadow: 0 12px 32px rgba(90, 70, 40, 0.15);
+    border: 1px solid #EADFCB;
+  }
+  .date-label {
+    text-align: center;
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #A8875F;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .cat-wrap { display: flex; justify-content: center; margin: 8px 0 4px; }
+  .status-title {
+    text-align: center;
+    font-size: 20px;
+    font-weight: 700;
+    color: #4A3F30;
+    margin: 4px 0 2px;
+  }
+  .status-sub {
+    text-align: center;
+    font-size: 14px;
+    color: #9C8D76;
+    margin-bottom: 20px;
+  }
+  button.main {
+    width: 100%;
+    padding: 14px 0;
+    border-radius: 16px;
+    border: none;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    background: #D98E4A;
+    color: #FFFDF9;
+    transition: background 0.2s ease;
+  }
+  button.main.done {
+    background: #EFE4D2;
+    color: #4A3F30;
+  }
+  .streak {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 22px 0 14px;
+    font-size: 15px;
+    color: #6B5B41;
+    font-weight: 600;
+  }
+  .strip { display: flex; justify-content: space-between; gap: 6px; }
+  .day-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .day-label { font-size: 11px; color: #B0A48D; font-weight: 500; text-transform: uppercase; }
+  .day-label.today { color: #B4682A; font-weight: 700; }
+  .day-dot {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; background: #EFE9DC; color: #C9BEA8;
+    border: 2px solid transparent;
+  }
+  .day-dot.done { background: #D98E4A; color: #FFFDF9; }
+  .day-dot.today { border-color: #B4682A; }
+  .error-msg { color: #B4472A; font-size: 13px; margin-top: 10px; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="date-label" id="dateLabel"></div>
+    <div class="cat-wrap" id="catWrap"></div>
+    <div class="status-title" id="statusTitle"></div>
+    <div class="status-sub" id="statusSub"></div>
+    <button class="main" id="mainBtn"></button>
+    <div class="error-msg" id="errorMsg" style="display:none;"></div>
+    <div class="streak" id="streakLine">🐾 <span id="streakText"></span></div>
+    <div class="strip" id="strip"></div>
+  </div>
+
+<script>
+const STORAGE_KEY = "chat-medoc-historique";
+
+function pad(n) { return String(n).padStart(2, "0"); }
+function toKey(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+function startOfDay(d) {
+  const c = new Date(d);
+  c.setHours(0, 0, 0, 0);
+  return c;
+}
+function dayLabel(date) {
+  return date.toLocaleDateString("fr-FR", { weekday: "short" }).replace(".", "");
+}
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveHistory(history) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function catSVG(mood) {
+  const palettes = {
+    happy:   { fur: "#E8A34D", inner: "#FFF6E9", cheek: "#F5C99B" },
+    waiting: { fur: "#8C8378", inner: "#EFEAE2", cheek: "#D8CFC2" },
+    sleepy:  { fur: "#6B6459", inner: "#E4DDD1", cheek: "#C7BCA9" },
+  };
+  const p = palettes[mood];
+  let face = "";
+  if (mood === "happy") {
+    face = `
+      <path d="M70 95 Q78 85 86 95" stroke="#3A342B" stroke-width="4" fill="none" stroke-linecap="round" />
+      <path d="M114 95 Q122 85 130 95" stroke="#3A342B" stroke-width="4" fill="none" stroke-linecap="round" />
+      <path d="M85 130 Q100 145 115 130" stroke="#3A342B" stroke-width="4" fill="none" stroke-linecap="round" />`;
+  } else if (mood === "waiting") {
+    face = `
+      <circle cx="78" cy="98" r="6" fill="#3A342B" />
+      <circle cx="122" cy="98" r="6" fill="#3A342B" />
+      <path d="M88 132 Q100 128 112 132" stroke="#3A342B" stroke-width="4" fill="none" stroke-linecap="round" />`;
+  } else {
+    face = `
+      <path d="M68 98 Q78 102 88 98" stroke="#3A342B" stroke-width="4" fill="none" stroke-linecap="round" />
+      <path d="M112 98 Q122 102 132 98" stroke="#3A342B" stroke-width="4" fill="none" stroke-linecap="round" />
+      <path d="M92 133 Q100 130 108 133" stroke="#3A342B" stroke-width="3" fill="none" stroke-linecap="round" />`;
+  }
+  return `
+  <svg viewBox="0 0 200 180" width="120" height="108" role="img" aria-label="Chat">
+    <polygon points="35,55 15,10 70,45" fill="${p.fur}" />
+    <polygon points="165,55 185,10 130,45" fill="${p.fur}" />
+    <polygon points="38,50 27,22 58,42" fill="${p.cheek}" />
+    <polygon points="162,50 173,22 142,42" fill="${p.cheek}" />
+    <ellipse cx="100" cy="105" rx="82" ry="72" fill="${p.fur}" />
+    <ellipse cx="100" cy="120" rx="55" ry="42" fill="${p.inner}" />
+    ${face}
+    <polygon points="100,112 94,120 106,120" fill="#C97B5C" />
+    <line x1="20" y1="108" x2="65" y2="104" stroke="#3A342B" stroke-width="2" />
+    <line x1="20" y1="120" x2="65" y2="118" stroke="#3A342B" stroke-width="2" />
+    <line x1="180" y1="108" x2="135" y2="104" stroke="#3A342B" stroke-width="2" />
+    <line x1="180" y1="120" x2="135" y2="118" stroke="#3A342B" stroke-width="2" />
+  </svg>`;
+}
+
+function computeStreak(history, today) {
+  let count = 0;
+  let cursor = new Date(today);
+  if (!history[toKey(cursor)]) {
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  while (history[toKey(cursor)]) {
+    count++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return count;
+}
+
+function render() {
+  const today = startOfDay(new Date());
+  const todayKey = toKey(today);
+  const history = loadHistory();
+  const takenToday = !!history[todayKey];
+  const mood = takenToday ? "happy" : (new Date().getHours() >= 20 ? "sleepy" : "waiting");
+
+  document.getElementById("dateLabel").textContent =
+    today.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+
+  document.getElementById("catWrap").innerHTML = catSVG(mood);
+
+  document.getElementById("statusTitle").textContent = takenToday
+    ? "Bravo, médicament pris !"
+    : "Pas encore pris aujourd'hui";
+  document.getElementById("statusSub").textContent = takenToday
+    ? "Le chat peut se rendormir tranquille."
+    : "Le chat attend son petit rituel du matin.";
+
+  const btn = document.getElementById("mainBtn");
+  btn.textContent = takenToday ? "↺ Annuler (pas pris finalement)" : "✓ J'ai pris mon médicament";
+  btn.className = "main" + (takenToday ? " done" : "");
+
+  const streak = computeStreak(history, today);
+  document.getElementById("streakText").textContent = streak === 0
+    ? "Pas encore de série en cours"
+    : `${streak} jour${streak > 1 ? "s" : ""} de suite`;
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (6 - i));
+    return d;
+  });
+
+  const strip = document.getElementById("strip");
+  strip.innerHTML = "";
+  days.forEach((d) => {
+    const key = toKey(d);
+    const done = !!history[key];
+    const isToday = key === todayKey;
+
+    const col = document.createElement("div");
+    col.className = "day-col";
+
+    const label = document.createElement("div");
+    label.className = "day-label" + (isToday ? " today" : "");
+    label.textContent = dayLabel(d);
+
+    const dot = document.createElement("div");
+    dot.className = "day-dot" + (done ? " done" : "") + (isToday ? " today" : "");
+    dot.textContent = done ? "🐟" : "";
+
+    col.appendChild(label);
+    col.appendChild(dot);
+    strip.appendChild(col);
+  });
+}
+
+document.getElementById("mainBtn").addEventListener("click", () => {
+  const today = startOfDay(new Date());
+  const todayKey = toKey(today);
+  const history = loadHistory();
+  if (history[todayKey]) delete history[todayKey];
+  else history[todayKey] = true;
+
+  const ok = saveHistory(history);
+  const errEl = document.getElementById("errorMsg");
+  if (!ok) {
+    errEl.style.display = "block";
+    errEl.textContent = "La sauvegarde n'a pas fonctionné sur cet appareil.";
+  } else {
+    errEl.style.display = "none";
+  }
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
